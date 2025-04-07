@@ -73,8 +73,18 @@ namespace Spine.Unity.Examples {
 			collectedSkin.AddAttachments(equipsSkin);
 
 			// 2. Create a repacked skin.
-			var repackedSkin = collectedSkin.GetRepackedSkin("Repacked skin", skeletonAnimation.SkeletonDataAsset.atlasAssets[0].PrimaryMaterial, out runtimeMaterial, out runtimeAtlas);
+			// Note: materials and textures returned by GetRepackedSkin() behave like 'new Texture2D()' and need to be destroyed
+			if (runtimeMaterial)
+				Destroy(runtimeMaterial);
+			if (runtimeAtlas)
+				Destroy(runtimeAtlas);
+			var repackedSkin = collectedSkin.GetRepackedSkin("Repacked skin", skeletonAnimation.SkeletonDataAsset.atlasAssets[0].PrimaryMaterial,
+				out runtimeMaterial, out runtimeAtlas, maxAtlasSize : 1024, clearCache: false);
 			collectedSkin.Clear();
+
+			// You can optionally clear the textures cache after each ore multiple repack operations are done.
+			//AtlasUtilities.ClearCache();
+			//Resources.UnloadUnusedAssets();
 
 			// 3. Use the repacked skin.
 			skeletonAnimation.Skeleton.Skin = repackedSkin;

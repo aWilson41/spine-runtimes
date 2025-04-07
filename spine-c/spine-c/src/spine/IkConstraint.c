@@ -72,7 +72,7 @@ void spIkConstraint_apply1 (spBone* bone, float targetX, float targetY, int /*bo
 	spBone* p = bone->parent;
     float pa = p->a, pb = p->b, pc = p->c, pd = p->d;
     float rotationIK = -bone->ashearX - bone->arotation;
-    float tx = 0, ty = 0, sx = 0, sy = 0, s = 0;
+    float tx = 0, ty = 0, sx = 0, sy = 0, s = 0, sa = 0, sc = 0;
 	if (!bone->appliedValid) spBone_updateAppliedTransform(bone);
 
     switch(bone->data->transformMode) {
@@ -81,11 +81,12 @@ void spIkConstraint_apply1 (spBone* bone, float targetX, float targetY, int /*bo
             ty = targetY - bone->worldY;
             break;
         case SP_TRANSFORMMODE_NOROTATIONORREFLECTION: {
-            float ps;
-            rotationIK += ATAN2(pc, pa) * RAD_DEG;
-            ps = ABS(pa * pd - pb * pc) / (pa * pa + pc * pc);
-            pb = -pc * ps;
-            pd = pa * ps;
+            s = ABS(pa * pd - pb * pc) / (pa * pa + pc * pc);
+			sa = pa / bone->skeleton->scaleX;
+			sc = pc / bone->skeleton->scaleY;
+			pb = -sc * s * bone->skeleton->scaleX;
+			pd = sa * s * bone->skeleton->scaleY;
+			rotationIK += ATAN2(sc, sa) * RAD_DEG;
         }
         default: {
             float x = targetX - p->worldX, y = targetY - p->worldY;
@@ -266,7 +267,7 @@ void spIkConstraint_apply2 (spBone* parent, spBone* child, float targetX, float 
 		a1 = (a1 - os) * RAD_DEG + o1 - parent->arotation;
 		if (a1 > 180) a1 -= 360;
 		else if (a1 < -180) a1 += 360;
-		spBone_updateWorldTransformWith(parent, px, py, parent->rotation + a1 * alpha, sx, parent->ascaleY, 0, 0);
+		spBone_updateWorldTransformWith(parent, px, py, parent->arotation + a1 * alpha, sx, parent->ascaleY, 0, 0);
 		a2 = ((a2 + os) * RAD_DEG - child->ashearX) * s2 + o2 - child->arotation;
 		if (a2 > 180) a2 -= 360;
 		else if (a2 < -180) a2 += 360;

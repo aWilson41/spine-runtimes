@@ -70,8 +70,20 @@ namespace Spine {
 		}
 
 		protected override void LoadContent () {
-			// Two color tint effect, comment line 80 to disable
-			var spineEffect = Content.Load<Effect>("spine-xna-example-content\\SpineEffect");
+
+			bool useNormalmapShader = false;
+			Effect spineEffect;
+			if (!useNormalmapShader) {
+				// Two color tint effect. Note that you can also use the default BasicEffect instead.
+				spineEffect = Content.Load<Effect>("spine-xna-example-content\\SpineEffect");
+			}
+			else {
+				spineEffect = Content.Load<Effect>("spine-xna-example-content\\SpineEffectNormalmap");
+				spineEffect.Parameters["Light0_Direction"].SetValue(new Vector3(-0.5265408f, 0.5735765f, -0.6275069f));
+				spineEffect.Parameters["Light0_Diffuse"].SetValue(new Vector3(1, 0.9607844f, 0.8078432f));
+				spineEffect.Parameters["Light0_Specular"].SetValue(new Vector3(1, 0.9607844f, 0.8078432f));
+				spineEffect.Parameters["Light0_SpecularExponent"].SetValue(2.0f);
+			}
 			spineEffect.Parameters["World"].SetValue(Matrix.Identity);
 			spineEffect.Parameters["View"].SetValue(Matrix.CreateLookAt(new Vector3(0.0f, 0.0f, 1.0f), Vector3.Zero, Vector3.Up));
 
@@ -83,19 +95,26 @@ namespace Spine {
 			skeletonDebugRenderer.DisableAll();
 			skeletonDebugRenderer.DrawClipping = true;
 
-			// String name = "spineboy-ess";
-			// String name = "goblins-pro";
-			// String name = "raptor-pro";
+			// String name = "spineboy-pro";
+			String name = "raptor-pro";
 			// String name = "tank-pro";
-			String name = "coin-pro";
+			//String name = "coin-pro";
+			if (useNormalmapShader)
+				name = "raptor-pro"; // we only have normalmaps for raptor
 			String atlasName = name.Replace("-pro", "").Replace("-ess", "");
-			if (name == "goblins-pro") atlasName = "goblins-mesh";
+
 			bool binaryData = false;
 
-			Atlas atlas = new Atlas(assetsFolder + atlasName + ".atlas", new XnaTextureLoader(GraphicsDevice));
-
+			Atlas atlas;
+			if (!useNormalmapShader) {
+				atlas = new Atlas(assetsFolder + atlasName + ".atlas", new XnaTextureLoader(GraphicsDevice));
+			}
+			else {
+				atlas = new Atlas(assetsFolder + atlasName + ".atlas", new XnaTextureLoader(GraphicsDevice,
+								loadMultipleTextureLayers: true, textureSuffixes: new string[] { "", "_normals" }));
+			}
 			float scale = 1;
-			if (name == "spineboy-ess") scale = 0.6f;
+			if (name == "spineboy-pro") scale = 0.6f;
 			if (name == "raptor-pro") scale = 0.5f;
 			if (name == "tank-pro") scale = 0.3f;
 			if (name == "coin-pro") scale = 1;
@@ -105,7 +124,8 @@ namespace Spine {
 				SkeletonBinary binary = new SkeletonBinary(atlas);
 				binary.Scale = scale;
 				skeletonData = binary.ReadSkeletonData(assetsFolder + name + ".skel");
-			} else {
+			}
+			else {
 				SkeletonJson json = new SkeletonJson(atlas);
 				json.Scale = scale;
 				skeletonData = json.ReadSkeletonData(assetsFolder + name + ".json");
@@ -117,7 +137,7 @@ namespace Spine {
 			AnimationStateData stateData = new AnimationStateData(skeleton.Data);
 			state = new AnimationState(stateData);
 
-			if (name == "spineboy-ess") {
+			if (name == "spineboy-pro") {
 				skeleton.SetAttachment("head-bb", "head");
 
 				stateData.SetMix("run", "jump", 0.2f);
@@ -172,7 +192,7 @@ namespace Spine {
 		protected override void Draw (GameTime gameTime) {
 			GraphicsDevice.Clear(Color.Black);
 
-			state.Update(gameTime.ElapsedGameTime.Milliseconds / 1000f);
+			state.Update((float)(gameTime.ElapsedGameTime.TotalMilliseconds / 1000.0));
 			state.Apply(skeleton);
 			skeleton.UpdateWorldTransform();
 			if (skeletonRenderer.Effect is BasicEffect) {

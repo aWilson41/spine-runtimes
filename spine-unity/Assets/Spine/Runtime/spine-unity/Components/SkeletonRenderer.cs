@@ -39,6 +39,10 @@
 #define BUILT_IN_SPRITE_MASK_COMPONENT
 #endif
 
+#if UNITY_2019_3_OR_NEWER
+#define CONFIGURABLE_ENTER_PLAY_MODE
+#endif
+
 #define SPINE_OPTIONAL_RENDEROVERRIDE
 #define SPINE_OPTIONAL_MATERIALOVERRIDE
 
@@ -53,13 +57,13 @@ namespace Spine.Unity {
 	[ExecuteInEditMode]
 	#endif
 	[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer)), DisallowMultipleComponent]
-	[HelpURL("http://esotericsoftware.com/spine-unity-rendering")]
+	[HelpURL("http://esotericsoftware.com/spine-unity#SkeletonRenderer-Component")]
 	public class SkeletonRenderer : MonoBehaviour, ISkeletonComponent, IHasSkeletonDataAsset {
-		[SerializeField] public SkeletonDataAsset skeletonDataAsset;
+		public SkeletonDataAsset skeletonDataAsset;
 
 		#region Initialization settings
 		/// <summary>Skin name to use when the Skeleton is initialized.</summary>
-		[SerializeField] [SpineSkin(defaultAsEmptyString:true)] public string initialSkinName;
+		[SpineSkin(defaultAsEmptyString:true)] public string initialSkinName;
 
 		/// <summary>Enable this parameter when overwriting the Skeleton's skin from an editor script.
 		/// Otherwise any changes will be overwritten by the next inspector update.</summary>
@@ -71,10 +75,20 @@ namespace Spine.Unity {
 		protected bool editorSkipSkinSync = false;
 		#endif
 		/// <summary>Flip X and Y to use when the Skeleton is initialized.</summary>
-		[SerializeField] public bool initialFlipX, initialFlipY;
+		public bool initialFlipX, initialFlipY;
 		#endregion
 
 		#region Advanced Render Settings
+
+		/// <summary>Update mode to optionally limit updates to e.g. only apply animations but not update the mesh.</summary>
+		public UpdateMode UpdateMode { get { return updateMode; } set { updateMode = value; } }
+		protected UpdateMode updateMode = UpdateMode.FullUpdate;
+
+		/// <summary>Update mode used when the MeshRenderer becomes invisible
+		/// (when <c>OnBecameInvisible()</c> is called). Update mode is automatically
+		/// reset to <c>UpdateMode.FullUpdate</c> when the mesh becomes visible again.</summary>
+		public UpdateMode updateWhenInvisible = UpdateMode.FullUpdate;
+
 		// Submesh Separation
 		/// <summary>Slot names used to populate separatorSlots list when the Skeleton is initialized. Changing this after initialization does nothing.</summary>
 		[UnityEngine.Serialization.FormerlySerializedAs("submeshSeparators")][SerializeField][SpineSlot] protected string[] separatorSlotNames = new string[0];
@@ -172,14 +186,16 @@ namespace Spine.Unity {
 				generateMeshOverride += value;
 				if (disableRenderingOnOverride && generateMeshOverride != null) {
 					Initialize(false);
-					meshRenderer.enabled = false;
+					if (meshRenderer)
+						meshRenderer.enabled = false;
 				}
 			}
 			remove {
 				generateMeshOverride -= value;
 				if (disableRenderingOnOverride && generateMeshOverride == null) {
 					Initialize(false);
-					meshRenderer.enabled = true;
+					if (meshRenderer)
+						meshRenderer.enabled = true;
 				}
 			}
 		}
@@ -226,20 +242,24 @@ namespace Spine.Unity {
 		/// <summary>OnRebuild is raised after the Skeleton is successfully initialized.</summary>
 		public event SkeletonRendererDelegate OnRebuild;
 
+		/// <summary>OnMeshAndMaterialsUpdated is called at the end of LateUpdate after the Mesh and
+		/// all materials have been updated.</summary>
+		public event SkeletonRendererDelegate OnMeshAndMaterialsUpdated;
+
 		public SkeletonDataAsset SkeletonDataAsset { get { return skeletonDataAsset; } } // ISkeletonComponent
 
 		#region Runtime Instantiation
-		public static T NewSpineGameObject<T> (SkeletonDataAsset skeletonDataAsset) where T : SkeletonRenderer {
-			return SkeletonRenderer.AddSpineComponent<T>(new GameObject("New Spine GameObject"), skeletonDataAsset);
+		public static T NewSpineGameObject<T> (SkeletonDataAsset skeletonDataAsset, bool quiet = false) where T : SkeletonRenderer {
+			return SkeletonRenderer.AddSpineComponent<T>(new GameObject("New Spine GameObject"), skeletonDataAsset, quiet);
 		}
 
 		/// <summary>Add and prepare a Spine component that derives from SkeletonRenderer to a GameObject at runtime.</summary>
 		/// <typeparam name="T">T should be SkeletonRenderer or any of its derived classes.</typeparam>
-		public static T AddSpineComponent<T> (GameObject gameObject, SkeletonDataAsset skeletonDataAsset) where T : SkeletonRenderer {
+		public static T AddSpineComponent<T> (GameObject gameObject, SkeletonDataAsset skeletonDataAsset, bool quiet = false) where T : SkeletonRenderer {
 			var c = gameObject.AddComponent<T>();
 			if (skeletonDataAsset != null) {
 				c.skeletonDataAsset = skeletonDataAsset;
-				c.Initialize(false);
+				c.Initialize(false, quiet);
 			}
 			return c;
 		}
@@ -260,7 +280,14 @@ namespace Spine.Unity {
 
 		public virtual void Awake () {
 			Initialize(false);
+			updateMode = updateWhenInvisible;
 		}
+
+	#if UNITY_EDITOR && CONFIGURABLE_ENTER_PLAY_MODE
+		public virtual void Start () {
+			Initialize(false);
+		}
+	#endif
 
 		void OnDisable () {
 			if (clearStateOnDisable && valid)
@@ -291,7 +318,7 @@ namespace Spine.Unity {
 		/// <summary>
 		/// Initialize this component. Attempts to load the SkeletonData and creates the internal Skeleton object and buffers.</summary>
 		/// <param name="overwrite">If set to <c>true</c>, it will overwrite internal objects if they were already generated. Otherwise, the initialized component will ignore subsequent calls to initialize.</param>
-		public virtual void Initialize (bool overwrite) {
+		public virtual void Initialize (bool overwrite, bool quiet = false) {
 			if (valid && !overwrite)
 				return;
 
@@ -337,7 +364,7 @@ namespace Spine.Unity {
 			#if UNITY_EDITOR
 			if (!Application.isPlaying) {
 				string errorMessage = null;
-				if (MaterialChecks.IsMaterialSetupProblematic(this, ref errorMessage))
+				if (!quiet && MaterialChecks.IsMaterialSetupProblematic(this, ref errorMessage))
 					Debug.LogWarningFormat(this, "Problematic material setup at {0}: {1}", this.name, errorMessage);
 			}
 			#endif
@@ -351,11 +378,13 @@ namespace Spine.Unity {
 			#if UNITY_EDITOR && NEW_PREFAB_SYSTEM
 			// Don't store mesh or material at the prefab, otherwise it will permanently reload
 			var prefabType = UnityEditor.PrefabUtility.GetPrefabAssetType(this);
-			if (!UnityEditor.PrefabUtility.IsPartOfPrefabInstance(this) &&
+			if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(this) &&
 				(prefabType == UnityEditor.PrefabAssetType.Regular || prefabType == UnityEditor.PrefabAssetType.Variant)) {
 				return;
 			}
 			#endif
+
+			if (updateMode != UpdateMode.FullUpdate) return;
 
 			#if SPINE_OPTIONAL_RENDEROVERRIDE
 			bool doMeshOverride = generateMeshOverride != null;
@@ -468,6 +497,20 @@ namespace Spine.Unity {
 				SetMaterialSettingsToFixDrawOrder();
 			}
 			#endif
+
+			if (OnMeshAndMaterialsUpdated != null)
+				OnMeshAndMaterialsUpdated(this);
+		}
+
+		public void OnBecameVisible () {
+			UpdateMode previousUpdateMode = updateMode;
+			updateMode = UpdateMode.FullUpdate;
+			if (previousUpdateMode != UpdateMode.FullUpdate)
+				LateUpdate(); // OnBecameVisible is called after LateUpdate()
+		}
+
+		public void OnBecameInvisible () {
+			updateMode = updateWhenInvisible;
 		}
 
 		public void FindAndApplySeparatorSlots (string startsWith, bool clearExistingSeparators = true, bool updateStringArray = false) {
@@ -522,7 +565,7 @@ namespace Spine.Unity {
 					separatorSlots.Add(slot);
 				}
 				#if UNITY_EDITOR
-				else
+				else if (!string.IsNullOrEmpty(separatorSlotNames[i]))
 				{
 					Debug.LogWarning(separatorSlotNames[i] + " is not a slot in " + skeletonDataAsset.skeletonJSON.name);
 				}
@@ -651,6 +694,9 @@ namespace Spine.Unity {
 			}
 
 			for (int i = 0; i < meshRenderer.sharedMaterials.Length; ++i) {
+				if (!meshRenderer.sharedMaterials[i])
+					continue;
+
 				if (!hasPerRendererBlock) meshRenderer.GetPropertyBlock(reusedPropertyBlock, i);
 				// Note: this parameter shall not exist at any shader, then Unity will create separate
 				// material instances (not in terms of memory cost or leakage).

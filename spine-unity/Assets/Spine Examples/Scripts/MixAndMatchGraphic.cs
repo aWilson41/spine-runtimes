@@ -96,6 +96,8 @@ namespace Spine.Unity.Examples {
 			int visorSlotIndex = skeleton.FindSlotIndex(visorSlot); // You can access GetAttachment and SetAttachment via string, but caching the slotIndex is faster.
 			Attachment baseAttachment = baseSkin.GetAttachment(visorSlotIndex, visorKey); // STEP 1.1
 			Attachment newAttachment = baseAttachment.GetRemappedClone(visorSprite, sourceMaterial); // STEP 1.2 - 1.3
+			// Note: Each call to `GetRemappedClone()` with parameter `premultiplyAlpha` set to `true` creates
+			// a cached Texture copy which can be cleared by calling AtlasUtilities.ClearCache() as done below.
 			customSkin.SetAttachment(visorSlotIndex, visorKey, newAttachment); // STEP 1.4
 
 			// And now for the gun.
@@ -119,6 +121,11 @@ namespace Spine.Unity.Examples {
 				var repackedSkin = new Skin("repacked skin");
 				repackedSkin.AddAttachments(skeleton.Data.DefaultSkin);
 				repackedSkin.AddAttachments(customSkin);
+				// Note: materials and textures returned by GetRepackedSkin() behave like 'new Texture2D()' and need to be destroyed
+				if (runtimeMaterial)
+					Destroy(runtimeMaterial);
+				if (runtimeAtlas)
+					Destroy(runtimeAtlas);
 				repackedSkin = repackedSkin.GetRepackedSkin("repacked skin", sourceMaterial, out runtimeMaterial, out runtimeAtlas);
 				skeleton.SetSkin(repackedSkin);
 			} else {
@@ -130,6 +137,12 @@ namespace Spine.Unity.Examples {
 			skeletonGraphic.Update(0);
 			skeletonGraphic.OverrideTexture = runtimeAtlas;
 
+			// `GetRepackedSkin()` and each call to `GetRemappedClone()` with parameter `premultiplyAlpha` set to `true`
+			// cache necessarily created Texture copies which can be cleared by calling AtlasUtilities.ClearCache().
+			// You can optionally clear the textures cache after multiple repack operations.
+			// Just be aware that while this cleanup frees up memory, it is also a costly operation
+			// and will likely cause a spike in the framerate.
+			AtlasUtilities.ClearCache();
 			Resources.UnloadUnusedAssets();
 		}
 	}

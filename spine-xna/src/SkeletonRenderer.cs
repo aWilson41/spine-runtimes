@@ -56,6 +56,16 @@ namespace Spine {
 		private bool premultipliedAlpha;
 		public bool PremultipliedAlpha { get { return premultipliedAlpha; } set { premultipliedAlpha = value; } }
 
+		/// <summary>Attachments are rendered back to front in the x/y plane by the SkeletonRenderer.
+		/// Each attachment is offset by a customizable z-spacing value on the z-axis to avoid z-fighting
+		/// in shaders with ZWrite enabled. Typical values lie in the range [-0.1, 0].</summary>
+		private float zSpacing = 0.0f;
+		public float ZSpacing { get { return zSpacing; } set { zSpacing = value; } }
+
+		/// <summary>A Z position offset added at each vertex.</summary>
+		private float z = 0.0f;
+		public float Z { get { return z; } set { z = value; } }
+
 		public SkeletonRenderer (GraphicsDevice device) {
 			this.device = device;
 
@@ -100,9 +110,10 @@ namespace Spine {
 			for (int i = 0, n = drawOrder.Count; i < n; i++) {
 				Slot slot = drawOrderItems[i];
 				Attachment attachment = slot.Attachment;
+				float attachmentZOffset = z + zSpacing * i;
 
 				float attachmentColorR, attachmentColorG, attachmentColorB, attachmentColorA;
-				Texture2D texture = null;
+				object textureObject = null;
 				int verticesCount = 0;
 				float[] vertices = this.vertices;
 				int indicesCount = 0;
@@ -113,7 +124,7 @@ namespace Spine {
 					RegionAttachment regionAttachment = (RegionAttachment)attachment;
 					attachmentColorR = regionAttachment.R; attachmentColorG = regionAttachment.G; attachmentColorB = regionAttachment.B; attachmentColorA = regionAttachment.A;
 					AtlasRegion region = (AtlasRegion)regionAttachment.RendererObject;
-					texture = (Texture2D)region.page.rendererObject;
+					textureObject = region.page.rendererObject;
 					verticesCount = 4;
 					regionAttachment.ComputeWorldVertices(slot.Bone, vertices, 0, 2);
 					indicesCount = 6;
@@ -124,7 +135,7 @@ namespace Spine {
 					MeshAttachment mesh = (MeshAttachment)attachment;
 					attachmentColorR = mesh.R; attachmentColorG = mesh.G; attachmentColorB = mesh.B; attachmentColorA = mesh.A;
 					AtlasRegion region = (AtlasRegion)mesh.RendererObject;
-					texture = (Texture2D)region.page.rendererObject;
+					textureObject = region.page.rendererObject;
 					int vertexCount = mesh.WorldVerticesLength;
 					if (vertices.Length < vertexCount) vertices = new float[vertexCount];
 					verticesCount = vertexCount >> 1;
@@ -189,7 +200,12 @@ namespace Spine {
 
 				// submit to batch
 				MeshItem item = batcher.NextItem(verticesCount, indicesCount);
-				item.texture = texture;
+				if (textureObject is Texture2D)
+					item.texture = (Texture2D) textureObject;
+				else {
+					item.textureLayers = (Texture2D[]) textureObject;
+					item.texture = item.textureLayers[0];
+				}
 				for (int ii = 0, nn = indicesCount; ii < nn; ii++) {
 					item.triangles[ii] = indices[ii];
 				}
@@ -199,7 +215,7 @@ namespace Spine {
 					itemVertices[ii].Color2 = darkColor;
 					itemVertices[ii].Position.X = vertices[v];
 					itemVertices[ii].Position.Y = vertices[v + 1];
-					itemVertices[ii].Position.Z = 0;
+					itemVertices[ii].Position.Z = attachmentZOffset;
 					itemVertices[ii].TextureCoordinate.X = uvs[v];
 					itemVertices[ii].TextureCoordinate.Y = uvs[v + 1];
 					if (VertexEffect != null) VertexEffect.Transform(ref itemVertices[ii]);

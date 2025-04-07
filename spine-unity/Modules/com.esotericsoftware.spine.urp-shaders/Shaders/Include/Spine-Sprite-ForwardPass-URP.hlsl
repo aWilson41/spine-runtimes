@@ -1,9 +1,13 @@
 #ifndef VERTEX_LIT_FORWARD_PASS_URP_INCLUDED
 #define VERTEX_LIT_FORWARD_PASS_URP_INCLUDED
 
+#include "Include/Spine-Sprite-Common-URP.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-
 #include "SpineCoreShaders/SpriteLighting.cginc"
+
+#if defined(_RIM_LIGHTING) || defined(_ADDITIONAL_LIGHTS) || defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+	#define NEEDS_POSITION_WS
+#endif
 
 ////////////////////////////////////////
 // Vertex output struct
@@ -26,10 +30,10 @@ struct VertexOutputLWRP
 #else
 	half3 normalWorld : TEXCOORD4;
 #endif
-#if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
+#if (defined(_MAIN_LIGHT_SHADOWS) || defined(MAIN_LIGHT_CALCULATE_SHADOWS)) && !defined(_RECEIVE_SHADOWS_OFF)
 	float4 shadowCoord : TEXCOORD7;
 #endif
-#if defined(_RIM_LIGHTING) || defined(_ADDITIONAL_LIGHTS)
+#if defined(NEEDS_POSITION_WS)
 	float4 positionWS : TEXCOORD8;
 #endif
 	UNITY_VERTEX_OUTPUT_STEREO
@@ -75,12 +79,12 @@ half4 LightweightFragmentPBRSimplified(InputData inputData, half4 texAlbedoAlpha
 	half4 albedo = texAlbedoAlpha * vertexColor;
 
 	BRDFData brdfData;
-	half ignoredAlpha = 1; // ignore alpha, otherwise 
+	half ignoredAlpha = 1; // ignore alpha, otherwise
 	InitializeBRDFData(albedo.rgb, metallic, specular, smoothness, ignoredAlpha, brdfData);
 	brdfData.specular *= albedo.a;
 
 #ifndef _MAIN_LIGHT_VERTEX
-#if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
+#if (defined(_MAIN_LIGHT_SHADOWS) || defined(MAIN_LIGHT_CALCULATE_SHADOWS)) && !defined(_RECEIVE_SHADOWS_OFF)
 	Light mainLight = GetMainLight(inputData.shadowCoord);
 #else
 	Light mainLight = GetMainLight();
@@ -105,7 +109,7 @@ half4 LightweightFragmentPBRSimplified(InputData inputData, half4 texAlbedoAlpha
 	finalColor += inputData.vertexLighting * brdfData.diffuse;
 #endif
 	finalColor += emission;
-	return prepareLitPixelForOutput(half4(finalColor, texAlbedoAlpha.a), vertexColor);
+	return prepareLitPixelForOutput(half4(finalColor, albedo.a), vertexColor);
 }
 
 #else // !SPECULAR
@@ -115,7 +119,7 @@ half4 LightweightFragmentBlinnPhongSimplified(InputData inputData, half4 texDiff
 	half4 diffuse = texDiffuseAlpha * vertexColor;
 
 #ifndef _MAIN_LIGHT_VERTEX
-#if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
+#if (defined(_MAIN_LIGHT_SHADOWS) || defined(MAIN_LIGHT_CALCULATE_SHADOWS)) && !defined(_RECEIVE_SHADOWS_OFF)
 	Light mainLight = GetMainLight(inputData.shadowCoord);
 #else
 	Light mainLight = GetMainLight();
@@ -138,8 +142,13 @@ half4 LightweightFragmentBlinnPhongSimplified(InputData inputData, half4 texDiff
 	for (int i = 0; i < pixelLightCount; ++i)
 	{
 		Light light = GetAdditionalLight(i, inputData.positionWS);
-		half3 attenuatedLightColor = light.color * (light.distanceAttenuation * light.shadowAttenuation);
+		half3 attenuation = (light.distanceAttenuation * light.shadowAttenuation);
+		half3 attenuatedLightColor = light.color * attenuation;
+#ifndef _DIFFUSE_RAMP
 		diffuseLighting += LightingLambert(attenuatedLightColor, light.direction, inputData.normalWS);
+#else
+		diffuseLighting += LightingLambertRamped(light.color, attenuation, light.direction, inputData.normalWS);
+#endif
 	}
 #endif
 #ifdef _ADDITIONAL_LIGHTS_VERTEX
@@ -148,7 +157,7 @@ half4 LightweightFragmentBlinnPhongSimplified(InputData inputData, half4 texDiff
 	diffuseLighting += emission;
 	//half3 finalColor = diffuseLighting * diffuse + emission;
 	half3 finalColor = diffuseLighting * diffuse.rgb;
-	return prepareLitPixelForOutput(half4(finalColor, texDiffuseAlpha.a), vertexColor);
+	return prepareLitPixelForOutput(half4(finalColor, diffuse.a), vertexColor);
 }
 #endif // SPECULAR
 
@@ -168,14 +177,14 @@ VertexOutputLWRP ForwardPassVertexSprite(VertexInput input)
 	float backFaceSign = 1;
 #if defined(FIXED_NORMALS_BACKFACE_RENDERING)
 	backFaceSign = calculateBackfacingSign(positionWS.xyz);
-#endif	
+#endif
 	output.viewDirectionWS = GetCameraPositionWS() - positionWS;
+#if defined(NEEDS_POSITION_WS)
+	output.positionWS = float4(positionWS, 1);
+#endif
 
 #if defined(PER_PIXEL_LIGHTING)
 
-#if defined(_RIM_LIGHTING) || defined(_ADDITIONAL_LIGHTS)
-	output.positionWS = float4(positionWS, 1);
-#endif
 	half3 normalWS = calculateSpriteWorldNormal(input, -backFaceSign);
 	output.normalWorld.xyz = normalWS;
 
@@ -191,7 +200,8 @@ VertexOutputLWRP ForwardPassVertexSprite(VertexInput input)
 #endif // !PER_PIXEL_LIGHTING
 	output.fogFactorAndVertexLight.yzw = LightweightLightVertexSimplified(positionWS, normalWS);
 
-#if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
+
+#if (defined(_MAIN_LIGHT_SHADOWS) || defined(MAIN_LIGHT_CALCULATE_SHADOWS)) && !defined(_RECEIVE_SHADOWS_OFF)
 	VertexPositionInputs vertexInput;
 	vertexInput.positionWS = positionWS;
 	vertexInput.positionCS = output.pos;
@@ -212,14 +222,23 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 	UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
 	fixed4 texureColor = calculateTexturePixel(input.texcoord.xy);
+	RETURN_UNLIT_IF_ADDITIVE_SLOT(texureColor, input.vertexColor) // shall be called before ALPHA_CLIP
 	ALPHA_CLIP(texureColor, input.vertexColor)
 
 	// fill out InputData struct
 	InputData inputData;
-#if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
-	inputData.shadowCoord = input.shadowCoord;
+#if !defined(_RECEIVE_SHADOWS_OFF)
+	#if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
+		inputData.shadowCoord = input.shadowCoord;
+	#elif defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+		inputData.shadowCoord = TransformWorldToShadowCoord(input.positionWS);
+	#elif defined(_MAIN_LIGHT_SHADOWS)
+		inputData.shadowCoord = input.shadowCoord;
+	#else
+		inputData.shadowCoord = float4(0, 0, 0, 0);
+	#endif
 #endif
-	
+
 	inputData.viewDirectionWS = input.viewDirectionWS;
 	inputData.vertexLighting = input.fogFactorAndVertexLight.yzw;
 
@@ -239,7 +258,7 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 #if defined(_RIM_LIGHTING) || defined(_ADDITIONAL_LIGHTS)
 	inputData.positionWS = input.positionWS.rgb;
 #endif
-	
+
 #if defined(SPECULAR)
 	half2 metallicGloss = getMetallicGloss(input.texcoord.xy);
 	half metallic = metallicGloss.x;
@@ -261,6 +280,7 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 
 	COLORISE(pixel)
 	APPLY_FOG_LWRP(pixel, input.fogFactorAndVertexLight.x)
+
 	return pixel;
 }
 

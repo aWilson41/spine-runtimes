@@ -68,6 +68,7 @@ namespace Spine.Unity.Examples {
 		public int colliderLayer = 0;
 		[Range(0, 1)]
 		public float mix = 1;
+		public bool oldRagdollBehaviour = true;
 		#endregion
 
 		ISkeletonAnimation targetSkeletonComponent;
@@ -322,12 +323,18 @@ namespace Spine.Unity.Examples {
 				var t = pair.Value;
 				bool isStartingBone = b == StartingBone;
 				Transform parentTransform = isStartingBone ? ragdollRoot : boneTable[b.Parent];
+				if (!oldRagdollBehaviour && isStartingBone) {
+					if (b != skeleton.RootBone) { // RagdollRoot is not skeleton root.
+						ragdollRoot.localPosition = new Vector3(b.Parent.WorldX, b.Parent.WorldY, 0);
+						ragdollRoot.localRotation = Quaternion.Euler(0, 0, GetPropagatedRotation(b.Parent));
+					}
+				}
 				Vector3 parentTransformWorldPosition = parentTransform.position;
 				Quaternion parentTransformWorldRotation = parentTransform.rotation;
 
 				parentSpaceHelper.position = parentTransformWorldPosition;
 				parentSpaceHelper.rotation = parentTransformWorldRotation;
-				parentSpaceHelper.localScale = parentTransform.localScale;
+				parentSpaceHelper.localScale = parentTransform.lossyScale;
 
 				Vector3 boneWorldPosition = t.position;
 				Vector3 right = parentSpaceHelper.InverseTransformDirection(t.right);

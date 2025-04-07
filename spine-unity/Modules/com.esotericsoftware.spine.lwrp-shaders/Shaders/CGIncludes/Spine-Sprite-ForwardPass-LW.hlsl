@@ -1,8 +1,8 @@
 #ifndef VERTEX_LIT_FORWARD_PASS_LW_INCLUDED
 #define VERTEX_LIT_FORWARD_PASS_LW_INCLUDED
 
+#include "CGIncludes/Spine-Sprite-Common-LW.hlsl"
 #include "Packages/com.unity.render-pipelines.lightweight/ShaderLibrary/Lighting.hlsl"
-
 #include "SpineCoreShaders/SpriteLighting.cginc"
 
 ////////////////////////////////////////
@@ -75,7 +75,7 @@ half4 LightweightFragmentPBRSimplified(InputData inputData, half4 texAlbedoAlpha
 	half4 albedo = texAlbedoAlpha * vertexColor;
 
 	BRDFData brdfData;
-	half ignoredAlpha = 1; // ignore alpha, otherwise 
+	half ignoredAlpha = 1; // ignore alpha, otherwise
 	InitializeBRDFData(albedo.rgb, metallic, specular, smoothness, ignoredAlpha, brdfData);
 	brdfData.specular *= albedo.a;
 
@@ -105,7 +105,7 @@ half4 LightweightFragmentPBRSimplified(InputData inputData, half4 texAlbedoAlpha
 	finalColor += inputData.vertexLighting * brdfData.diffuse;
 #endif
 	finalColor += emission;
-	return prepareLitPixelForOutput(half4(finalColor, texAlbedoAlpha.a), vertexColor);
+	return prepareLitPixelForOutput(half4(finalColor, albedo.a), vertexColor);
 }
 
 #else // !SPECULAR
@@ -148,7 +148,7 @@ half4 LightweightFragmentBlinnPhongSimplified(InputData inputData, half4 texDiff
 	diffuseLighting += emission;
 	//half3 finalColor = diffuseLighting * diffuse + emission;
 	half3 finalColor = diffuseLighting * diffuse.rgb;
-	return prepareLitPixelForOutput(half4(finalColor, texDiffuseAlpha.a), vertexColor);
+	return prepareLitPixelForOutput(half4(finalColor, diffuse.a), vertexColor);
 }
 #endif // SPECULAR
 
@@ -168,7 +168,7 @@ VertexOutputLWRP ForwardPassVertexSprite(VertexInput input)
 	float backFaceSign = 1;
 #if defined(FIXED_NORMALS_BACKFACE_RENDERING)
 	backFaceSign = calculateBackfacingSign(positionWS.xyz);
-#endif	
+#endif
 	output.viewDirectionWS = GetCameraPositionWS() - positionWS;
 
 #if defined(PER_PIXEL_LIGHTING)
@@ -212,6 +212,7 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 	UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
 	fixed4 texureColor = calculateTexturePixel(input.texcoord.xy);
+	RETURN_UNLIT_IF_ADDITIVE_SLOT(texureColor, input.vertexColor) // shall be called before ALPHA_CLIP
 	ALPHA_CLIP(texureColor, input.vertexColor)
 
 	// fill out InputData struct
@@ -219,7 +220,7 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 #if defined(_MAIN_LIGHT_SHADOWS) && !defined(_RECEIVE_SHADOWS_OFF)
 	inputData.shadowCoord = input.shadowCoord;
 #endif
-	
+
 	inputData.viewDirectionWS = input.viewDirectionWS;
 	inputData.vertexLighting = input.fogFactorAndVertexLight.yzw;
 
@@ -239,7 +240,7 @@ half4 ForwardPassFragmentSprite(VertexOutputLWRP input) : SV_Target
 #if defined(_RIM_LIGHTING) || defined(_ADDITIONAL_LIGHTS)
 	inputData.positionWS = input.positionWS.rgb;
 #endif
-	
+
 #if defined(SPECULAR)
 	half2 metallicGloss = getMetallicGloss(input.texcoord.xy);
 	half metallic = metallicGloss.x;

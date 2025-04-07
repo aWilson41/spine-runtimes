@@ -108,7 +108,7 @@ namespace Spine.Unity.Editor {
 			}
 
 			serializedObject.Update();
-			atlasAsset = atlasAsset ?? (SpineAtlasAsset)target;
+			atlasAsset = (atlasAsset == null) ? (SpineAtlasAsset)target : atlasAsset;
 			EditorGUI.BeginChangeCheck();
 			EditorGUILayout.PropertyField(atlasFile);
 			EditorGUILayout.PropertyField(materials, true);
@@ -136,7 +136,10 @@ namespace Spine.Unity.Editor {
 			if (SpineInspectorUtility.LargeCenteredButton(SpineInspectorUtility.TempContent("Set Mipmap Bias to " + SpinePreferences.DEFAULT_MIPMAPBIAS, tooltip: "This may help textures with mipmaps be less blurry when used for 2D sprites."))) {
 				foreach (var m in atlasAsset.materials) {
 					var texture = m.mainTexture;
-					texture.mipMapBias = SpinePreferences.DEFAULT_MIPMAPBIAS;
+					string texturePath = AssetDatabase.GetAssetPath(texture.GetInstanceID());
+					var importer = (TextureImporter)TextureImporter.GetAtPath(texturePath);
+					importer.mipMapBias = SpinePreferences.DEFAULT_MIPMAPBIAS;
+					EditorUtility.SetDirty(texture);
 				}
 				Debug.Log("Texture mipmap bias set to " + SpinePreferences.DEFAULT_MIPMAPBIAS);
 			}

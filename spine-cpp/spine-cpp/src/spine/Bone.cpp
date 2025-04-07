@@ -150,6 +150,8 @@ void Bone::updateWorldTransform(float x, float y, float rotation, float scaleX, 
 		float prx, rx, ry, la, lb, lc, ld;
 		if (s > 0.0001f) {
 			s = MathUtil::abs(pa * pd - pb * pc) / s;
+            pa /= _skeleton.getScaleX();
+            pc /= _skeleton.getScaleY();
 			pb = pc * s;
 			pd = pa * s;
 			prx = MathUtil::atan2(pc, pa) * MathUtil::Rad_Deg;
@@ -477,7 +479,7 @@ void Bone::setWorldY(float inValue) {
 }
 
 float Bone::getWorldRotationX() {
-	return MathUtil::atan2(_c, _a) * MathUtil::MathUtil::Rad_Deg;
+	return MathUtil::atan2(_c, _a) * MathUtil::Rad_Deg;
 }
 
 float Bone::getWorldRotationY() {

@@ -36,6 +36,7 @@
 #include <spine/SpineObject.h>
 #include <spine/SpineString.h>
 #include <spine/HasRendererObject.h>
+#include "Slot.h"
 
 #ifdef SPINE_USE_STD_FUNCTION
 #include <functional>
@@ -59,6 +60,7 @@ namespace spine {
 	class AnimationStateData;
 	class Skeleton;
 	class RotateTimeline;
+	class AttachmentTimeline;
 
 #ifdef SPINE_USE_STD_FUNCTION
 	typedef std::function<void (AnimationState* state, EventType type, TrackEntry* entry, Event* event)> AnimationStateListener;
@@ -385,6 +387,14 @@ namespace spine {
 		void enableQueue();
 
 	private:
+		static const int Subsequent = 0;
+		static const int First = 1;
+		static const int HoldSubsequent = 2;
+		static const int HoldFirst = 3;
+		static const int HoldMix = 4;
+
+		static const int Setup = 1;
+		static const int Current = 2;
 
 		AnimationStateData* _data;
 
@@ -399,11 +409,14 @@ namespace spine {
 		AnimationStateListener _listener;
 		AnimationStateListenerObject* _listenerObject;
 
+		int _unkeyedState;
+
 		float _timeScale;
 
 		static Animation* getEmptyAnimation();
 
 		static void applyRotateTimeline(RotateTimeline* rotateTimeline, Skeleton& skeleton, float time, float alpha, MixBlend pose, Vector<float>& timelinesRotation, size_t i, bool firstFrame);
+        void applyAttachmentTimeline(AttachmentTimeline* attachmentTimeline, Skeleton& skeleton, float animationTime, MixBlend pose, bool firstFrame);
 
 		/// Returns true when all mixing from entries are complete.
 		bool updateMixingFrom(TrackEntry* to, float delta);
@@ -428,8 +441,8 @@ namespace spine {
 
 		void computeHold(TrackEntry *entry);
 
-		void computeNotLast(TrackEntry *entry);
-	};
+        void setAttachment(Skeleton &skeleton, spine::Slot &slot, const String &attachmentName, bool attachments);
+    };
 }
 
 #endif /* Spine_AnimationState_h */
